@@ -1,4 +1,4 @@
-#pragma one
+#pragma once
 #include <unordered_map>
 #include <queue>
 #include <functional>
@@ -33,6 +33,135 @@ private:
 	ThreadFunc func_;
 };
 
+//这个用于接收任意数据的类型
+class Any
+{
+public:
+	Any() = default;
+	~Any() = default;
+
+	Any(const Any&) = delete;
+	Any& operator=(const Any&) = delete;
+
+	Any(Any&&) = default;
+	Any& operator=(Any&&) = default;
+
+	//让Any类型接收任意其它的数据
+	template<typename T>
+	Any(T data): base_(std::make_unique<Derive<T>>(data))
+	{}
+
+	//获取data数据
+	template<typename T>
+	T cast_()
+	{
+		Derive<T>* ptr = dynamic_cast<Derive<T>*>(base_.get());
+		if (ptr == nullptr)
+		{
+			throw "type is unmatch!";
+		}
+		return ptr->data_;
+	}
+
+private:
+
+	//基类类型
+	class Base
+	{
+	public:
+		virtual ~Base() = default;
+	};
+	//派生类
+	template<typename T>
+	class Derive : public Base
+	{
+	public:
+		Derive(T data) : data_(data)
+		{}
+		T data_;  // 保存了任意的其它类型
+	};
+private:
+	// 定义一个基类的指针
+	std::unique_ptr<Base> base_;
+};
+
+
+// 实现一个信号量类
+class Semaphore
+{
+public:
+	Semaphore(int limit = 0)
+		:resLimit_(limit)
+	{}
+	~Semaphore() = default;
+
+	// 获取一个信号量资源
+	void wait()
+	{
+		std::unique_lock<std::mutex> lock(mtx_);
+		// 等待信号量有资源，没有资源的话，会阻塞当前线程
+		cond_.wait(lock, [&]()->bool {return resLimit_ > 0; });
+		resLimit_--;
+	}
+
+	// 增加一个信号量资源
+	void post()
+	{
+		std::unique_lock<std::mutex> lock(mtx_);
+		resLimit_++;
+		cond_.notify_all();  // 等待状态，释放mutex锁 通知条件变量wait的地方
+	}
+private:
+	int resLimit_;
+	std::mutex mtx_;
+	std::condition_variable cond_;
+};
+
+
+//Task对象前置声明
+class Task;
+// 实现接收提交到线程池的task任务执行完成后的返回值类型Result
+class Result
+{
+public:
+	Result(std::shared_ptr<Task> task, bool isValid = true);
+	~Result() = default;
+
+	//设置任务返回值
+	void setVal(Any any);
+	//获取任务返回值 ----用户调用
+	Any getVal();
+
+private:
+	//保存任务返回值
+	Any any_;
+	//线程通信信号量
+	Semaphore sem_;
+	//指向对应获取返回值的任务对象
+	std::shared_ptr<Task> task_;
+	//返回值是否有效
+	std::atomic_bool isValid_;
+};
+
+
+/*
+这是一个基类，使用时需要用户重写run方法
+*/
+class Task
+{
+public:
+	Task();
+	~Task() = default;
+	//添加一个中间层吧，线程池调用
+	void exec();
+	//设置result_，保存任务对象信息，和返回值
+	void setResult(Result* res);
+
+	//需要用户重写,真正要执行的任务
+	virtual	Any run() = 0;
+private:
+	Result* result_;
+};
 
 
 // 线程池支持的模式
@@ -41,20 +170,6 @@ enum class PoolMode
 	MODE_FIXED,  // 固定数量的线程
 	MODE_CACHED, // 线程数量可动态增长
 };
-
-//Task对象前置声明
-/*
-这是一个基类，使用时需要用户重写run方法
-*/
-class Task
-{
-public:
-	virtual	void run() = 0;
-private:
-
-};
-
-
 
 class ThreadPool
 {
