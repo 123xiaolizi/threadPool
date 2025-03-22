@@ -27,6 +27,7 @@ public:
 	void start();
 
 	int getId() const;
+
 private:
 	static int generaID_;
 	int threadID;
@@ -124,7 +125,9 @@ class Task;
 class Result
 {
 public:
+
 	Result(std::shared_ptr<Task> task, bool isValid = true);
+	
 	~Result() = default;
 
 	//设置任务返回值
@@ -193,7 +196,7 @@ public:
 	void setThreadSizeThreshHold(int threshhold);
 
 	// 给线程池提交任务
-	void submitTask(std::shared_ptr<Task> sp);
+	Result submitTask(std::shared_ptr<Task> sp);
 
 private:
 	// 定义线程函数
@@ -226,6 +229,8 @@ private:
 	std::condition_variable notFull_;
 	//表示队列不空
 	std::condition_variable notEmpty_;
+	// 等到线程资源全部回收
+	std::condition_variable exitCond_; 
 
 	//线程池工作模式
 	PoolMode poolMode_;
